@@ -1,1 +1,2 @@
 # GsKernel_AndroidMap
+AndroidMap是基于GIS内核做的一个Android地图应用,目前可以加载基本的瓦片数据,包括tpk,tile,mbtiles,
