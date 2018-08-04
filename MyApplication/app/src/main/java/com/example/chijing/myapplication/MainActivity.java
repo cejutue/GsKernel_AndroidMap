@@ -38,21 +38,35 @@ throw ex;
         pDB.DataRoomNames(GsDataRoomType.eTileClass,v);
         GsTileClass pTcs = pDB .OpenTileClass("img.tpk");
         GsTileColumnInfo colOnfo =pTcs.TileColumnInfo();
-        GsTileCursor pCur =  pTcs.Search(14,14);
-        GsTile pTile =  pCur.Next();
-        int count =0;
-        do {
-            if(!GISHelp.IsEmptyTilePtr(pTile))
-                break;
-            count++;
-            long l = pTile.Level();
-            long r = pTile.Row();
-            long c = pTile.Col();
 
-            byte[] pdata = new byte[pTile.TileDataLength()];
-            pTile.TileDataPtr(pdata);
-            pTile = pCur.Next();
-        }while(!GISHelp.IsEmptyTilePtr(pTile));
+        for(int i = 0; i<50;i++) {
+            GsTileCursor pCur = pTcs.Search(15, 15);
+            GsTile pTile = pCur.Next();
+            int count = 0;
+            do {
+                if (GISHelp.IsEmptyTilePtr(pTile))
+                    break;
+                count++;
+                long l = pTile.Level();
+                long r = pTile.Row();
+                long c = pTile.Col();
+
+                byte[] pdata = new byte[pTile.TileDataLength()];
+                pTile.TileDataPtr(pdata);
+                pdata = null;
+                pTile.delete();
+                pTile = null;
+                pTile = pCur.Next();
+            } while (!GISHelp.IsEmptyTilePtr(pTile));
+            pCur.delete();
+            pCur = null;
+        }
+
+        //pCur.delete();
+        //pCur = null;
+        //pTcs.delete();
+        //pCur = null;
+        //System.gc();
 
         GsSpatialReference d =new GsSpatialReference(4326);
         String spStr =  d.toString();
