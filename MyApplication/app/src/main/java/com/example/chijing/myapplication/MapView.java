@@ -10,6 +10,8 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.service.quicksettings.Tile;
+import android.support.annotation.NonNull;
 import android.support.v4.view.GestureDetectorCompat;
 import android.support.v7.widget.AppCompatImageView;
 import android.util.Log;
@@ -26,7 +28,12 @@ import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 
 import static android.content.ContentValues.TAG;
@@ -47,7 +54,7 @@ public class MapView extends AppCompatImageView {
     Bitmap m_Superbitmap = null;
     Canvas m_Cansvas = null;
     Paint m_Panit = null;
-
+    ArrayList<TileKey> m_tileKey =  new ArrayList<TileKey>();
 
 
     void Init() {
@@ -84,26 +91,35 @@ public class MapView extends AppCompatImageView {
          x2 = m_Box.getXMax();
          xq= m_Box.getXMin();
     }
+    protected void BestLevelSet()    {
 
-    @Override
-    protected void onDraw(Canvas canvas) {
-
-        m_Cansvas = canvas;
-
-        DrawTiles();
-        DrawGrid();
-        super.onDraw(canvas);
+        ViewGroup mViewGroup = (ViewGroup) getParent();
+        if (null != mViewGroup) {
+            mParentWidth = mViewGroup.getWidth();
+            mParentHeight = mViewGroup.getHeight();
+        }
+        GsRect rc = new GsRect(0, 0, mParentWidth, mParentHeight);
+        if (m_DisplayTrans == null)
+            m_DisplayTrans = new GsDisplayTransformation(m_Box, rc);
+        double x2 = m_Box.getXMax();
+        double xq= m_Box.getXMin();
+        m_DisplayTrans.DeviceExtent(rc);
+        m_DisplayTrans.MapExtent(m_Box);
     }
+    protected  void DrawTilesWithNoCache()    {
+        BestLevelSet();
 
-    private void InitCache() {
         double res = m_DisplayTrans.Resolution();
         int nLevel = m_Pyramid.BestLevel(res);
+        //nLevel = 12;
         int[] range = new int[4];
         m_Pyramid.TileIndexRange(m_Box.getXMin(), m_Box.getYMin(), m_Box.getXMax(), m_Box.getYMax(), nLevel, range);
+
         GsTileCursor pCur = m_Tcls.Search(nLevel, range[0], range[1], range[2], range[3]);
         GsTile pTile = pCur.Next();
         int count = 0;
-
+        m_tileKey.clear();
+        boolean g = false;
         do {
             if (GISHelp.IsEmptyTilePtr(pTile))
                 break;
@@ -112,17 +128,84 @@ public class MapView extends AppCompatImageView {
             long r = pTile.Row();
             long c = pTile.Col();
             TileKey pkey = new TileKey(l, r, c);
+            m_tileKey.add(pkey);
+            GISHelp.LogRefCount(pTile);
+            DrawOneTile(pTile);
+            //pTile.Release();
+            //pTile    = null;
+            g = pCur.Next(pTile);
 
-            if (!m_TileCache.containsKey(pkey))
-                m_TileCache.put(pkey, pTile);
-            pTile = pCur.Next();
+        } while (g == true &&!GISHelp.IsEmptyTilePtr(pTile));
+        pTile.Release();
+        pTile = null;
+        pCur.Release();
+        pCur = null;
+        Log.i("drawtilescount", count + "");
+    }
+    protected void DrawGridWithNoCache() {
+        m_Panit.setColor(Color.BLUE);
+        m_Panit.setStyle(STROKE);//设置为空填充,画线
 
-        } while (!GISHelp.IsEmptyTilePtr(pTile));
+        GsRect rc = new GsRect(0, 0, mParentWidth, mParentHeight);
+        double[] dblarray = new double[4];
+        float[] fr = new float[4];
+        RectF rf = new RectF();
+        for (TileKey item : m_tileKey) {
+            int l = (int)item.l;
+            int r = (int)item.r;
+            int c = (int)item.c;
 
-        //pCur.delete();
-        //pCur = null;
-        //System.gc();
-        Log.i("tilescount", count + "");
+            m_Pyramid.TileExtent(l, r, c, dblarray);
+
+            m_DisplayTrans.FromMap(dblarray, 4, 2, fr);
+            rf.left = fr[0];
+            rf.top = fr[3];
+            rf.right = fr[2];
+            rf.bottom = fr[1];
+            Path path = new Path();
+            path.addRect(rf, CCW);
+            m_Panit.setColor(Color.BLUE);
+            m_Cansvas.drawPath(path, m_Panit);
+            String str = "Level=" + l + "Row=" + r + "Col=" + c;
+            m_Panit.setColor(Color.RED);
+            m_Cansvas.drawText(str, rf.left, rf.bottom, m_Panit);
+        }
+        m_tileKey.clear();
+
+    }
+    protected void DrawOneTile(GsTile tile)    {
+        int l = tile.Level();
+        int r = tile.Row();
+        int c = tile.Col();
+        Rect src = new Rect(0, 0, 256, 256);
+        RectF dst = new RectF();
+        double[] dblarray = new double[4];
+        float[] fr = new float[4];
+        m_Pyramid.TileExtent(l, r, c, dblarray);
+
+        m_DisplayTrans.FromMap(dblarray, 4, 2, fr);
+        dst.left = fr[0];
+        dst.top = fr[3];
+        dst.right = fr[2];
+        dst.bottom = fr[1];
+        //GISHelp.LogRefCount(tile);
+        Bitmap bmp = GISHelp.Tile2Bitmap(tile);
+        //GISHelp.LogRefCount(tile);
+        m_Cansvas.drawBitmap(bmp, src, dst, m_Panit);
+        bmp.recycle();
+        bmp = null;
+    }
+    @Override
+    protected void onDraw(Canvas canvas) {
+
+        m_Cansvas = canvas;
+
+        DrawTilesWithNoCache();
+        DrawGridWithNoCache();
+//        DrawTiles();
+//        DrawGrid();
+//        ClearCache();
+        super.onDraw(canvas);
     }
 
     public MapView(Context context) {
@@ -130,7 +213,6 @@ public class MapView extends AppCompatImageView {
         Init();
         InitEvent();
     }
-
 
     public MapView(Context context, AttributeSet attrs) {
         this(context, attrs, 0);
@@ -144,6 +226,40 @@ public class MapView extends AppCompatImageView {
         InitEvent();
     }
 
+
+    //------------------缓存模式begin-----------------
+    private void InitCache() {
+        double res = m_DisplayTrans.Resolution();
+        int nLevel = m_Pyramid.BestLevel(res);
+        int[] range = new int[4];
+        m_Pyramid.TileIndexRange(m_Box.getXMin(), m_Box.getYMin(), m_Box.getXMax(), m_Box.getYMax(), nLevel, range);
+
+        GsTileCursor pCur = m_Tcls.Search(nLevel, range[0], range[1], range[2], range[3]);
+        GsTile pTile = pCur.Next();
+        int count = 0;
+
+        do {
+            if (GISHelp.IsEmptyTilePtr(pTile))
+                break;
+            count++;
+            long l = pTile.Level();
+            long r = pTile.Row();
+            long c = pTile.Col();
+            TileKey pkey = new TileKey(l, r, c);
+
+            if (!m_TileCache.containsKey(pkey)) {
+                pTile.AddRef();
+                m_TileCache.put(pkey, pTile);
+            }
+
+            pTile = pCur.Next();
+
+        } while (!GISHelp.IsEmptyTilePtr(pTile));
+        pTile = null;
+        pCur.Release();
+        pCur = null;
+        Log.i("tilescount", count + "");
+    }
     protected void DrawTiles() {
         Log.d("DrawTile",""+1);
         ViewGroup mViewGroup = (ViewGroup) getParent();
@@ -159,9 +275,7 @@ public class MapView extends AppCompatImageView {
         m_DisplayTrans.DeviceExtent(rc);
         m_DisplayTrans.MapExtent(m_Box);
 
-        m_TileCache.clear();
         InitCache();
-
 
         Rect src = new Rect(0, 0, 256, 256);
         RectF dst = new RectF();
@@ -183,13 +297,25 @@ public class MapView extends AppCompatImageView {
 
             Bitmap bmp = GISHelp.Tile2Bitmap(item.getValue());
             m_Cansvas.drawBitmap(bmp, src, dst, m_Panit);
+            bmp.recycle();
 
         }
         Log.d("DrawTile",""+2);
     }
-
+    void ClearCache()
+    {
+        int c = 0;
+        for (Map.Entry<TileKey, GsTile> item : m_TileCache.entrySet()) {
+            //item.getValue().Release();
+            GsTile tmp = item.getValue();
+            c = tmp.RefCount();
+            tmp.Release();
+            tmp = null;
+        }
+        m_TileCache.clear();
+    }
     protected void DrawGrid() {
-        Log.d("DraeGrid",""+2);
+        Log.d("DrawGrid",""+2);
         m_Panit.setColor(Color.BLUE);
         m_Panit.setStyle(STROKE);//设置为空填充,画线
 
@@ -217,12 +343,11 @@ public class MapView extends AppCompatImageView {
             String str = "Level=" + l + "Row=" + r + "Col=" + c;
             m_Panit.setColor(Color.RED);
             m_Cansvas.drawText(str, rf.left, rf.bottom, m_Panit);
-            item.getValue().delete();
-
         }
 
         Log.d("DraeGrid",""+3);
     }
+    //------------------缓存模式end-----------------
 
 
     private GestureDetectorCompat m_GestureDetectorCompat = null;
@@ -298,14 +423,14 @@ return true;
         }
 
         public boolean onDoubleTapEvent(MotionEvent e) {
-            if(m_DisplayTrans == null)
-                return false;
-
-            double f = m_DisplayTrans.Resolution()/3;
-            if(f>0)
-                m_DisplayTrans.Resolution(m_DisplayTrans.Resolution()-m_DisplayTrans.Resolution()/3);
-            m_Box = m_DisplayTrans.MapExtent();
-            invalidate();
+//            if(m_DisplayTrans == null)
+//                return false;
+//
+//            double f = m_DisplayTrans.Resolution()/3;
+//            if(f>0)
+//                m_DisplayTrans.Resolution(m_DisplayTrans.Resolution()-m_DisplayTrans.Resolution()/3);
+//            m_Box = m_DisplayTrans.MapExtent();
+//            invalidate();
             return true;
         }
     };
