@@ -20,7 +20,7 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             //TestNewObj();
-           // testKernel();
+          //testKernel();
             //testKernel();
         }catch (Exception ex)
         {
@@ -57,30 +57,33 @@ throw ex;
         {
             return ;
         }
+
         GsTileColumnInfo colOnfo =pTcs.TileColumnInfo();
         int ksd = pTcs.RefCount();
-        for(int i = 0; i<10500;i++) {
-            GsTileCursor pCur = pTcs.Search(12,15);
+        for(int i = 0; i<2;i++) {
+
+            GsTileCursor pCur = pTcs.Search();
             GsTile pTile = pCur.Next();
 
             ksd = pTile.RefCount();
 
             int count = 0;
             do {
-                if (GISHelp.IsEmptyGsOobject(pTile))
+                if (pTile == null)
                     break;
                 count++;
                 long l = pTile.Level();
                 long r = pTile.Row();
                 long c = pTile.Col();
+            } while (pCur.Next(pTile));
 
-                pTile.Release();
-                pTile = null;
-                pTile = pCur.Next();
-            } while (!GISHelp.IsEmptyGsOobject(pTile));
-
+            if(pTile!= null)
+            {
+                pTile.delete();
+            }
             pTile = null;
-            pCur.Release();
+            if(pCur!= null)
+            pCur.delete();
             pCur = null;
             Log.d("Search",""+i);
             //System.gc();

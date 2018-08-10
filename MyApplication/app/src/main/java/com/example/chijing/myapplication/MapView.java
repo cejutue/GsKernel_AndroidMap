@@ -46,7 +46,7 @@ public class MapView extends AppCompatImageView {
     GsDisplayTransformation m_DisplayTrans = null;
     GsTileClass m_Tcls = null;
     GsBox m_Box = new GsBox();
-    GsSpatialReference m_Spatial = new GsSpatialReference(4326);
+    GsSpatialReference m_Spatial = null;//new GsSpatialReference(4326);
     GsPyramid m_Pyramid = new GsPyramid();
 
     HashMap<TileKey, GsTile> m_TileCache = null;
@@ -56,7 +56,10 @@ public class MapView extends AppCompatImageView {
     Paint m_Panit = null;
     ArrayList<TileKey> m_tileKey =  new ArrayList<TileKey>();
 
+    GsESRIFileGeoDatabaseFactory m_Fac = null;
+    GsGeoDatabase m_DB = null;
 
+    GsTile m_ptrTile = null;
     void Init() {
         m_Panit = new Paint();
         m_Panit.setAntiAlias(true);
@@ -67,12 +70,12 @@ public class MapView extends AppCompatImageView {
         GsConnectProperty conn = new GsConnectProperty();
         //conn.setServer("/mnt/sdcard/GeoGlobe/tmp/");
         conn.setServer("/mnt/sdcard/tmp/");
-        GsESRIFileGeoDatabaseFactory pFac = new GsESRIFileGeoDatabaseFactory();
+        m_Fac= new GsESRIFileGeoDatabaseFactory();
 
-        GsGeoDatabase pDB = pFac.Open(conn);
-        GsStringVector v = new GsStringVector();
-        pDB.DataRoomNames(GsDataRoomType.eTileClass, v);
-        m_Tcls = pDB.OpenTileClass("img.tpk");
+        m_DB = m_Fac.Open(conn);
+        //GsStringVector v = new GsStringVector();
+        //m_DB.DataRoomNames(GsDataRoomType.eTileClass, v);
+        m_Tcls = m_DB.OpenTileClass("img.tpk");
 
         m_Box = m_Tcls.TileColumnInfo().getXYDomain();
         m_Spatial = m_Tcls.SpatialReference();
@@ -106,6 +109,7 @@ public class MapView extends AppCompatImageView {
         m_DisplayTrans.DeviceExtent(rc);
         m_DisplayTrans.MapExtent(m_Box);
     }
+    GsTileCursor m_pCur= null;
     protected  void DrawTilesWithNoCache()    {
         BestLevelSet();
 
@@ -113,33 +117,44 @@ public class MapView extends AppCompatImageView {
         int nLevel = m_Pyramid.BestLevel(res);
         //nLevel = 12;
         int[] range = new int[4];
+        double x1  = m_Box.getXMin();
+        double y1= m_Box.getYMin();
+        double x2 = m_Box.getXMax();
+        double y2  = m_Box.getYMax();
         m_Pyramid.TileIndexRange(m_Box.getXMin(), m_Box.getYMin(), m_Box.getXMax(), m_Box.getYMax(), nLevel, range);
+        if(m_pCur != null) {
+            m_pCur.delete();
+            m_pCur = null;
+        }
 
-        GsTileCursor pCur = m_Tcls.Search(nLevel, range[0], range[1], range[2], range[3]);
-        GsTile pTile = pCur.Next();
+         m_pCur = m_Tcls.Search(nLevel, range[0], range[1], range[2], range[3]);
+         if(m_pCur == null)
+             return;
+        if (m_ptrTile != null) {
+            m_ptrTile.delete();
+            m_ptrTile= null;
+            //m_ptrTile = m_pCur.Next();
+        }
+        //else
+        m_ptrTile =    m_pCur.Next();
         int count = 0;
         m_tileKey.clear();
         boolean g = false;
         do {
-            if (GISHelp.IsEmptyTilePtr(pTile))
+            if (m_ptrTile == null)
                 break;
             count++;
-            long l = pTile.Level();
-            long r = pTile.Row();
-            long c = pTile.Col();
+            long l = m_ptrTile.Level();
+            long r = m_ptrTile.Row();
+            long c = m_ptrTile.Col();
             TileKey pkey = new TileKey(l, r, c);
             m_tileKey.add(pkey);
-            GISHelp.LogRefCount(pTile);
-            DrawOneTile(pTile);
-            //pTile.Release();
-            //pTile    = null;
-            g = pCur.Next(pTile);
+            DrawOneTile(m_ptrTile);
+            g = m_pCur.Next(m_ptrTile);
 
-        } while (g == true &&!GISHelp.IsEmptyTilePtr(pTile));
-        pTile.Release();
-        pTile = null;
-        pCur.Release();
-        pCur = null;
+        } while (g == true &&!GISHelp.IsEmptyTilePtr(m_ptrTile));
+
+
         Log.i("drawtilescount", count + "");
     }
     protected void DrawGridWithNoCache() {
@@ -171,7 +186,7 @@ public class MapView extends AppCompatImageView {
             m_Cansvas.drawText(str, rf.left, rf.bottom, m_Panit);
         }
         m_tileKey.clear();
-
+        Log.i("drawtilesKey", 1 + "");
     }
     protected void DrawOneTile(GsTile tile)    {
         int l = tile.Level();

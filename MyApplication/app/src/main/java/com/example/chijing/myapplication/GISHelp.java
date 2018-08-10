@@ -26,7 +26,7 @@ public class GISHelp {
 
     public static   boolean IsEmptyGsOobject(GsRefObject pTile)
     {
-        if(pTile == null || GsRefObject.getCPtr(pTile) == 0)
+        if(pTile == null)// || GsRefObject.getCPtr(pTile) == 0)
             return true;
         GsRefObject pRow = pTile;
         if( GsRefObject.getCPtr(pRow) == 0)
@@ -34,6 +34,7 @@ public class GISHelp {
         else
             return false;
     }
+
     public static   boolean IsEmptyTilePtr(GsTile pTile)
     {
         if(pTile == null || GsTile.getCPtr(pTile) == 0)
