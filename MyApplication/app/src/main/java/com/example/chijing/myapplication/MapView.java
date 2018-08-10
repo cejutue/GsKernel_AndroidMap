@@ -10,6 +10,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.shapes.PathShape;
 import android.service.quicksettings.Tile;
 import android.support.annotation.NonNull;
 import android.support.v4.view.GestureDetectorCompat;
@@ -28,6 +29,7 @@ import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.widget.Toast;
 
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -38,6 +40,8 @@ import java.util.Map;
 
 import static android.content.ContentValues.TAG;
 import static android.graphics.Bitmap.Config.ARGB_8888;
+import static android.graphics.Paint.Style.FILL;
+import static android.graphics.Paint.Style.FILL_AND_STROKE;
 import static android.graphics.Paint.Style.STROKE;
 import static android.graphics.Path.Direction.CCW;
 
@@ -75,7 +79,7 @@ public class MapView extends AppCompatImageView {
         m_DB = m_Fac.Open(conn);
         //GsStringVector v = new GsStringVector();
         //m_DB.DataRoomNames(GsDataRoomType.eTileClass, v);
-        m_Tcls = m_DB.OpenTileClass("img.tpk");
+        m_Tcls = m_DB.OpenTileClass("wutpk3");
 
         m_Box = m_Tcls.TileColumnInfo().getXYDomain();
         m_Spatial = m_Tcls.SpatialReference();
@@ -160,6 +164,7 @@ public class MapView extends AppCompatImageView {
     protected void DrawGridWithNoCache() {
         m_Panit.setColor(Color.BLUE);
         m_Panit.setStyle(STROKE);//设置为空填充,画线
+        m_Panit.getStrokeWidth();
 
         GsRect rc = new GsRect(0, 0, mParentWidth, mParentHeight);
         double[] dblarray = new double[4];
@@ -217,6 +222,8 @@ public class MapView extends AppCompatImageView {
 
         DrawTilesWithNoCache();
         DrawGridWithNoCache();
+        InitFeatureClass();
+        DrawFeatureClass();
 //        DrawTiles();
 //        DrawGrid();
 //        ClearCache();
@@ -242,41 +249,33 @@ public class MapView extends AppCompatImageView {
     }
 
 
-    //------------------缓存模式begin-----------------
-    private void InitCache() {
-        double res = m_DisplayTrans.Resolution();
-        int nLevel = m_Pyramid.BestLevel(res);
-        int[] range = new int[4];
-        m_Pyramid.TileIndexRange(m_Box.getXMin(), m_Box.getYMin(), m_Box.getXMax(), m_Box.getYMax(), nLevel, range);
-
-        GsTileCursor pCur = m_Tcls.Search(nLevel, range[0], range[1], range[2], range[3]);
-        GsTile pTile = pCur.Next();
-        int count = 0;
-
-        do {
-            if (GISHelp.IsEmptyTilePtr(pTile))
-                break;
-            count++;
-            long l = pTile.Level();
-            long r = pTile.Row();
-            long c = pTile.Col();
-            TileKey pkey = new TileKey(l, r, c);
-
-            if (!m_TileCache.containsKey(pkey)) {
-                pTile.AddRef();
-                m_TileCache.put(pkey, pTile);
-            }
-
-            pTile = pCur.Next();
-
-        } while (!GISHelp.IsEmptyTilePtr(pTile));
-        pTile = null;
-        pCur.Release();
-        pCur = null;
-        Log.i("tilescount", count + "");
+    //------------------矢量绘制-----------------
+    GsFeatureClass m_ptrFcs = null;
+    GsSqliteGeoDatabaseFactory  m_FcsFac = null;
+    GsGeoDatabase m_FcsDB = null;
+    public void InitFeatureClass()
+    {
+        if(m_ptrFcs!= null)
+            return;
+        GsConnectProperty conn = new GsConnectProperty();
+        conn.setServer("/mnt/sdcard/tmp/");
+        m_FcsFac = new GsSqliteGeoDatabaseFactory();
+        m_FcsDB = m_FcsFac.Open(conn);
+        if(m_FcsDB == null)
+            return ;
+        //m_ptrFcs= m_FcsDB.OpenFeatureClass("RES1_4M_P");
+        //m_ptrFcs= m_FcsDB.OpenFeatureClass("BOU2_4M_S");
+        m_ptrFcs= m_FcsDB.OpenFeatureClass("地类图斑");
+        if(m_ptrFcs == null)
+            return;
+        //m_Box = m_ptrFcs.GeometryColumnInfo().getXYDomain();
     }
-    protected void DrawTiles() {
-        Log.d("DrawTile",""+1);
+
+    public void DrawFeatureClass()
+    {
+
+        if(m_ptrFcs == null)
+            return;
         ViewGroup mViewGroup = (ViewGroup) getParent();
         if (null != mViewGroup) {
             mParentWidth = mViewGroup.getWidth();
@@ -285,84 +284,86 @@ public class MapView extends AppCompatImageView {
         GsRect rc = new GsRect(0, 0, mParentWidth, mParentHeight);
         if (m_DisplayTrans == null)
             m_DisplayTrans = new GsDisplayTransformation(m_Box, rc);
-        double x2 = m_Box.getXMax();
-        double xq= m_Box.getXMin();
-        m_DisplayTrans.DeviceExtent(rc);
-        m_DisplayTrans.MapExtent(m_Box);
+        //GsBox tmpbox = m_DisplayTrans.MapExtent();
+        //m_DisplayTrans.MapExtent(m_ptrFcs.GeometryColumnInfo().getXYDomain());
+        GsEnvelope pEnv = new GsEnvelope(m_Box);
+        GsFeatureCursor pFeatureCursor =  m_ptrFcs.Search(pEnv);
+        GsFeature pFea = pFeatureCursor.Next();
 
-        InitCache();
-
-        Rect src = new Rect(0, 0, 256, 256);
-        RectF dst = new RectF();
-        double[] dblarray = new double[4];
-        float[] fr = new float[4];
-
-        for (Map.Entry<TileKey, GsTile> item : m_TileCache.entrySet()) {
-            int l = item.getValue().Level();
-            int r = item.getValue().Row();
-            int c = item.getValue().Col();
-
-            m_Pyramid.TileExtent(l, r, c, dblarray);
-
-            m_DisplayTrans.FromMap(dblarray, 4, 2, fr);
-            dst.left = fr[0];
-            dst.top = fr[3];
-            dst.right = fr[2];
-            dst.bottom = fr[1];
-
-            Bitmap bmp = GISHelp.Tile2Bitmap(item.getValue());
-            m_Cansvas.drawBitmap(bmp, src, dst, m_Panit);
-            bmp.recycle();
-
+        m_Panit.setColor(Color.RED);
+        float a = m_Panit.getStrokeWidth();
+        m_Panit.setStrokeWidth(5);
+        m_Panit.setStyle(STROKE);
+        do{
+            if(pFea == null)
+                break;
+            DrawFeature(pFea);
+        }while(pFeatureCursor.Next(pFea));
+        if(pFeatureCursor!= null)
+        {
+            pFeatureCursor.delete();
+            pFeatureCursor = null;
         }
-        Log.d("DrawTile",""+2);
-    }
-    void ClearCache()
-    {
-        int c = 0;
-        for (Map.Entry<TileKey, GsTile> item : m_TileCache.entrySet()) {
-            //item.getValue().Release();
-            GsTile tmp = item.getValue();
-            c = tmp.RefCount();
-            tmp.Release();
-            tmp = null;
-        }
-        m_TileCache.clear();
-    }
-    protected void DrawGrid() {
-        Log.d("DrawGrid",""+2);
         m_Panit.setColor(Color.BLUE);
-        m_Panit.setStyle(STROKE);//设置为空填充,画线
-
-        GsRect rc = new GsRect(0, 0, mParentWidth, mParentHeight);
-        double[] dblarray = new double[4];
-        float[] fr = new float[4];
-        RectF rf = new RectF();
-        for (Map.Entry<TileKey, GsTile> item : m_TileCache.entrySet()) {
-            int l = item.getValue().Level();
-            int r = item.getValue().Row();
-            int c = item.getValue().Col();
-
-            m_Pyramid.TileExtent(l, r, c, dblarray);
-
-            m_DisplayTrans.FromMap(dblarray, 4, 2, fr);
-            rf.left = fr[0];
-            rf.top = fr[3];
-            rf.right = fr[2];
-            rf.bottom = fr[1];
-            Path path = new Path();
-            path.addRect(rf, CCW);
-            // float[] a= {rf.left,rf.bottom,rf.right,rf.bottom,rf.right,rf.top,rf.left,rf.top,rf.left,rf.bottom};
-            m_Panit.setColor(Color.BLUE);
-            m_Cansvas.drawPath(path, m_Panit);
-            String str = "Level=" + l + "Row=" + r + "Col=" + c;
-            m_Panit.setColor(Color.RED);
-            m_Cansvas.drawText(str, rf.left, rf.bottom, m_Panit);
-        }
-
-        Log.d("DraeGrid",""+3);
+        m_Panit.setStrokeWidth(a);
     }
-    //------------------缓存模式end-----------------
+
+    double[] g = new double[2];
+    float[] gf= new float[2];
+    public void DrawFeature(GsFeature pFea)
+    {
+        if(pFea.GeometryBlob().GeometryType() == GsGeometryType.eGeometryTypePoint )//
+        {
+            pFea.GeometryBlob().Coordinate(g);
+            m_DisplayTrans.FromMap(g,2,2,gf);
+
+        }else if( pFea.GeometryBlob().GeometryType() == GsGeometryType.eGeometryTypeMultiPoint )
+        {
+            int length =  pFea.GeometryBlob().CoordinateLength();
+            double[] gpoints = new double[length];
+            float[] gpointsf = new float[length];
+            pFea.GeometryBlob().Coordinate(gpoints);
+            m_DisplayTrans.FromMap(gpoints,2,2,gpointsf);
+            m_Cansvas.drawPoints(gpointsf,0,length,m_Panit);
+        }
+        else if(pFea.GeometryBlob().GeometryType() == GsGeometryType.eGeometryTypePolyline)
+        {
+            //m_Panit.setStyle(STROKE);
+        }
+        else if(pFea.GeometryBlob().GeometryType() == GsGeometryType.eGeometryTypePolygon)
+        {
+            //m_Panit.setStyle(FILL);
+        }
+        else
+        {
+
+        }
+        GsGeometryBlob blob = pFea.GeometryBlob();
+        DrawBlob(blob);
+
+    }
+
+    void DrawBlob(GsGeometryBlob pGeo)
+    {
+        GsGraphicsGeometry GsDisPath = new GsGraphicsGeometry(pGeo,m_DisplayTrans);
+        int nCount= GsDisPath.PartCount();
+        Path path = new Path();
+        for(int i = 0 ; i<nCount; i++ )
+        {
+            int l =  GsDisPath.PartLength(i);
+            float[] fl = new float[l];
+            GsDisPath.PartPtr(i,fl);
+            path.moveTo(fl[0],fl[1]);
+            for(int j = 1; j<l/2;j++)
+            {
+                path.lineTo(fl[2*j],fl[2*j+1]);
+            }
+            if(pGeo.GeometryType() == GsGeometryType.eGeometryTypePolygon)
+                path.close();
+        }
+        m_Cansvas.drawPath(path,m_Panit);
+    }
+    //------------------矢量绘制-----------------
 
 
     private GestureDetectorCompat m_GestureDetectorCompat = null;

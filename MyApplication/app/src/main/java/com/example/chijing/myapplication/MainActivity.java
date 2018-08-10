@@ -60,7 +60,7 @@ throw ex;
 
         GsTileColumnInfo colOnfo =pTcs.TileColumnInfo();
         int ksd = pTcs.RefCount();
-        for(int i = 0; i<2;i++) {
+        for(int i = 0; i<6000;i++) {
 
             GsTileCursor pCur = pTcs.Search();
             GsTile pTile = pCur.Next();
